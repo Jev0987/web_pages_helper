@@ -1,0 +1,92 @@
+:root {
+  font-family: "Segoe UI", "PingFang SC", sans-serif;
+  color: #172033;
+  background: #f4efe7;
+  line-height: 1.4;
+  font-weight: 400;
+  --bg: #f4efe7;
+  --panel: #fffaf3;
+  --panel-strong: #f6e9d4;
+  --ink: #172033;
+  --muted: #6e7585;
+  --line: #dfd1bd;
+  --accent: #d35d3f;
+  --accent-soft: #f4d8cd;
+  --success: #2e6b4f;
+  --shadow: 0 12px 32px rgba(23, 32, 51, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at top right, rgba(211, 93, 63, 0.14), transparent 28%),
+    linear-gradient(180deg, #f8f2e9 0%, #f1ebdf 100%);
+  color: var(--ink);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: 0;
+}
+
+.app-shell {
+  min-height: 100vh;
+  padding: 16px;
+}
+
+.panel {
+  background: rgba(255, 250, 243, 0.95);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 250, 243, 0.88);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.button-primary {
+  background: var(--accent);
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 12px;
+}
+
+.button-secondary {
+  background: var(--panel-strong);
+  color: var(--ink);
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+}
+
+.field {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.muted {
+  color: var(--muted);
+}
