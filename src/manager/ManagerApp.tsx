@@ -49,7 +49,16 @@ export function ManagerApp() {
   const [editingCategoryName, setEditingCategoryName] = useState("");
   const [bulkCategoryId, setBulkCategoryId] = useState("");
   const [recentlyClosed, setRecentlyClosed] = useState<RecentlyClosedTab[]>([]);
+  const [viewMode, setViewMode] = useState<"grid" | "board">("grid");
+  const [boardSort, setBoardSort] = useState<"category" | "count">("category");
+  const [collapsedColumns, setCollapsedColumns] = useState<Record<string, boolean>>({});
+  const [draggingTabId, setDraggingTabId] = useState<number | null>(null);
+  const [dropCategoryId, setDropCategoryId] = useState<string | null>(null);
   const editingTab = tabs.find((tab) => tab.tabId === editingTabId) ?? null;
+  const activeCategoryName =
+    activeCategoryId === "all"
+      ? "全部标签页"
+      : categories.find((category) => category.categoryId === activeCategoryId)?.name ?? "筛选结果";
 
   useEffect(() => {
     async function bootstrap() {
@@ -88,6 +97,44 @@ export function ManagerApp() {
     });
   }, [activeCategoryId, search, tabs]);
 
+  const boardColumns = useMemo(() => {
+    const sortedCategories = categories
+      .slice()
+      .sort((left, right) => left.sortOrder - right.sortOrder);
+
+    const groups =
+      activeCategoryId === "all"
+        ? [
+            {
+              categoryId: "uncategorized",
+              name: "未分类",
+              tabs: filteredTabs.filter((tab) => !tab.categoryId)
+            },
+            ...sortedCategories.map((category) => ({
+              categoryId: category.categoryId,
+              name: category.name,
+              tabs: filteredTabs.filter((tab) => tab.categoryId === category.categoryId)
+            }))
+          ]
+        : [
+            {
+              categoryId: activeCategoryId,
+              name: activeCategoryName,
+              tabs: filteredTabs
+            }
+          ];
+
+    return groups
+      .filter((group) => group.tabs.length > 0 || activeCategoryId !== "all")
+      .sort((left, right) => {
+        if (boardSort === "count") {
+          return right.tabs.length - left.tabs.length || left.name.localeCompare(right.name, "zh-CN");
+        }
+
+        return left.name.localeCompare(right.name, "zh-CN");
+      });
+  }, [activeCategoryId, activeCategoryName, boardSort, categories, filteredTabs]);
+
   async function refreshTabs() {
     const response = await sendMessage({ type: "GET_TABS", scope: "allWindows" });
     if (response.ok && Array.isArray(response.data)) {
@@ -102,17 +149,54 @@ export function ManagerApp() {
     }
   }
 
+  async function moveTabToCategory(tabId: number, categoryId?: string) {
+    await sendMessage({
+      type: "UPDATE_TAB_META",
+      tabId,
+      payload: {
+        categoryId,
+        classificationMode: "manual"
+      }
+    });
+    await refreshTabs();
+  }
+
+  function toggleColumn(categoryId: string) {
+    setCollapsedColumns((current) => ({
+      ...current,
+      [categoryId]: !current[categoryId]
+    }));
+  }
+
   return (
     <div className="app-shell">
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "240px minmax(0, 1fr) 320px",
-          gap: 16,
-          alignItems: "start"
-        }}
-      >
-        <aside className="panel" style={{ padding: 16, position: "sticky", top: 16 }}>
+      <section className="panel workspace-hero" style={{ marginBottom: 18 }}>
+        <div>
+          <h1>标签工作台</h1>
+          <p>这是独立标签页视图。所有浏览器标签会以卡片窗口的方式展示，适合集中分类、检索、批量操作和恢复最近关闭的页面。</p>
+        </div>
+        <div className="chip" style={{ justifySelf: "end" }}>
+          当前视图: {viewMode === "grid" ? "卡片网格" : "分类看板"}
+        </div>
+      </section>
+
+      <div className="stat-grid" style={{ marginBottom: 18 }}>
+        <div className="stat-card panel">
+          <strong>{tabs.length}</strong>
+          <span className="muted">全部标签页</span>
+        </div>
+        <div className="stat-card panel">
+          <strong>{filteredTabs.length}</strong>
+          <span className="muted">当前筛选结果</span>
+        </div>
+        <div className="stat-card panel">
+          <strong>{recentlyClosed.length}</strong>
+          <span className="muted">最近关闭待恢复</span>
+        </div>
+      </div>
+
+      <div className="workspace-layout">
+        <aside className="panel workspace-sidebar">
           <SectionTitle title="分类" subtitle="系统分类与自定义分类" />
           <CategoryList
             categories={categories}
@@ -220,12 +304,37 @@ export function ManagerApp() {
           </div>
         </aside>
 
-        <main className="panel" style={{ padding: 16 }}>
+        <main className="panel workspace-main">
           <SectionTitle
-            title="标签页管理"
-            subtitle="查看全部窗口标签页，支持批量操作"
+            title={activeCategoryName}
+            subtitle="标签以卡片窗口形式展示，便于像看工作台一样浏览和整理"
             action={
-              <div style={{ display: "flex", gap: 8 }}>
+              <div className="toolbar-row">
+                <button
+                  className={viewMode === "grid" ? "button-primary" : "button-secondary"}
+                  onClick={() => setViewMode("grid")}
+                >
+                  网格视图
+                </button>
+                <button
+                  className={viewMode === "board" ? "button-primary" : "button-secondary"}
+                  onClick={() => setViewMode("board")}
+                >
+                  看板视图
+                </button>
+                {viewMode === "board" ? (
+                  <select
+                    className="field"
+                    style={{ width: 150 }}
+                    value={boardSort}
+                    onChange={(event) =>
+                      setBoardSort(event.target.value as "category" | "count")
+                    }
+                  >
+                    <option value="category">按分类名称</option>
+                    <option value="count">按标签数量</option>
+                  </select>
+                ) : null}
                 <button
                   className="button-secondary"
                   onClick={async () => {
@@ -285,7 +394,7 @@ export function ManagerApp() {
             />
 
             {selectedTabIds.length > 0 ? (
-              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <div className="toolbar-row">
                 <div className="chip">已选择 {selectedTabIds.length} 个标签页</div>
                 <select
                   className="field"
@@ -308,53 +417,111 @@ export function ManagerApp() {
                 <div className="muted">正在加载全部窗口标签页...</div>
               ) : filteredTabs.length === 0 ? (
                 <div className="muted">当前条件下没有标签页。</div>
-              ) : (
-                filteredTabs.map((tab) => (
-                  <TabItem
-                    key={tab.tabId}
-                    tab={tab}
-                    selected={selectedTabIds.includes(tab.tabId)}
-                    onSelect={toggleSelectedTab}
-                    onActivate={(tabId) => void sendMessage({ type: "ACTIVATE_TAB", tabId })}
-                    onClose={async (tabId) => {
-                      await sendMessage({ type: "CLOSE_TAB", tabId });
-                      await refreshTabs();
-                      await refreshRecentlyClosed();
-                    }}
-                    onEdit={setEditingTabId}
-                    categories={categories}
-                    onChangeCategory={async (tabId, categoryId) => {
-                      await sendMessage({
-                        type: "UPDATE_TAB_META",
-                        tabId,
-                        payload: {
-                          categoryId,
-                          classificationMode: "manual"
+              ) : viewMode === "board" ? (
+                <div className="board-grid">
+                  {boardColumns.map((group) => (
+                    <section
+                      key={group.categoryId}
+                      className={`board-column${dropCategoryId === group.categoryId ? " is-drop-target" : ""}`}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        setDropCategoryId(group.categoryId);
+                      }}
+                      onDragLeave={() => {
+                        setDropCategoryId((current) =>
+                          current === group.categoryId ? null : current
+                        );
+                      }}
+                      onDrop={async (event) => {
+                        event.preventDefault();
+                        if (draggingTabId === null) {
+                          return;
                         }
-                      });
-                      await refreshTabs();
-                    }}
-                  />
-                ))
+
+                        await moveTabToCategory(
+                          draggingTabId,
+                          group.categoryId === "uncategorized" ? undefined : group.categoryId
+                        );
+                        setDraggingTabId(null);
+                        setDropCategoryId(null);
+                      }}
+                    >
+                      <div className="board-column-header">
+                        <strong>{group.name}</strong>
+                        <div className="board-column-toolbar">
+                          <span className="chip">{group.tabs.length} 个标签</span>
+                          <button
+                            className="button-secondary"
+                            onClick={() => toggleColumn(group.categoryId)}
+                          >
+                            {collapsedColumns[group.categoryId] ? "展开" : "折叠"}
+                          </button>
+                        </div>
+                      </div>
+                      {collapsedColumns[group.categoryId] ? (
+                        <div className="muted">该列已折叠。</div>
+                      ) : (
+                        <div className="board-column-stack">
+                          {group.tabs.map((tab) => (
+                            <TabItem
+                              key={tab.tabId}
+                              tab={tab}
+                              selected={selectedTabIds.includes(tab.tabId)}
+                              onSelect={toggleSelectedTab}
+                              onActivate={(tabId) => void sendMessage({ type: "ACTIVATE_TAB", tabId })}
+                              onClose={async (tabId) => {
+                                await sendMessage({ type: "CLOSE_TAB", tabId });
+                                await refreshTabs();
+                                await refreshRecentlyClosed();
+                              }}
+                              onEdit={setEditingTabId}
+                              categories={categories}
+                              onChangeCategory={moveTabToCategory}
+                              draggable
+                              dragging={draggingTabId === tab.tabId}
+                              onDragStart={setDraggingTabId}
+                              onDragEnd={() => {
+                                setDraggingTabId(null);
+                                setDropCategoryId(null);
+                              }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  ))}
+                </div>
+              ) : (
+                <div className="tab-grid">
+                  {filteredTabs.map((tab) => (
+                    <TabItem
+                      key={tab.tabId}
+                      tab={tab}
+                      selected={selectedTabIds.includes(tab.tabId)}
+                      onSelect={toggleSelectedTab}
+                      onActivate={(tabId) => void sendMessage({ type: "ACTIVATE_TAB", tabId })}
+                      onClose={async (tabId) => {
+                        await sendMessage({ type: "CLOSE_TAB", tabId });
+                        await refreshTabs();
+                        await refreshRecentlyClosed();
+                      }}
+                      onEdit={setEditingTabId}
+                      categories={categories}
+                      onChangeCategory={moveTabToCategory}
+                    />
+                  ))}
+                </div>
               )}
             </div>
 
             <div className="panel" style={{ padding: 16 }}>
               <SectionTitle title="最近关闭" subtitle="可恢复最近关闭的标签页" />
-              <div style={{ display: "grid", gap: 8 }}>
+              <div className="recent-grid">
                 {recentlyClosed.length === 0 ? (
                   <div className="muted">最近没有可恢复的标签页。</div>
                 ) : (
                   recentlyClosed.map((tab) => (
-                    <div
-                      key={tab.id}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "minmax(0, 1fr) auto",
-                        gap: 12,
-                        alignItems: "center"
-                      }}
-                    >
+                    <div key={tab.id} className="recent-card">
                       <div style={{ minWidth: 0 }}>
                         <div
                           style={{
@@ -369,6 +536,9 @@ export function ManagerApp() {
                         <div className="muted" style={{ fontSize: 12 }}>
                           {tab.domain}
                         </div>
+                      </div>
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        {new Date(tab.closedAt).toLocaleString()}
                       </div>
                       <button
                         className="button-secondary"
@@ -396,7 +566,7 @@ export function ManagerApp() {
           </div>
         </main>
 
-        <aside className="panel" style={{ padding: 16, position: "sticky", top: 16 }}>
+        <aside className="panel workspace-detail">
           <SectionTitle title="标签详情" subtitle="编辑自定义名称、备注和分类" />
           {editingTab ? (
             <EditPanel
