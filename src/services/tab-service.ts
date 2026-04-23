@@ -1,4 +1,4 @@
-import type { TabEntity } from "../types/tab";
+import type { RecentlyClosedTab, StoredTabMeta, TabEntity } from "../types/tab";
 import { safeParseDomain } from "../utils/url";
 import { getTabsMeta } from "./storage-service";
 
@@ -53,4 +53,28 @@ export async function closeTabs(tabIds: number[]): Promise<void> {
   }
 
   await chrome.tabs.remove(tabIds);
+}
+
+export function buildRecentlyClosedTab(
+  tab: chrome.tabs.Tab,
+  meta?: Partial<StoredTabMeta>
+): RecentlyClosedTab {
+  const closedAt = Date.now();
+  return {
+    id: `${tab.id ?? "unknown"}-${closedAt}`,
+    title: tab.title ?? "Untitled Tab",
+    url: tab.url ?? "",
+    domain: safeParseDomain(tab.url ?? ""),
+    favicon: tab.favIconUrl,
+    categoryId: meta?.categoryId,
+    customTitle: meta?.customTitle,
+    note: meta?.note,
+    classificationMode: meta?.classificationMode,
+    closedAt
+  };
+}
+
+export async function restoreClosedTab(tab: RecentlyClosedTab): Promise<number> {
+  const created = await chrome.tabs.create({ url: tab.url, active: false });
+  return created.id ?? -1;
 }

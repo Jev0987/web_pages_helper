@@ -5,9 +5,18 @@ type CategoryListProps = {
   activeCategoryId: string | "all";
   onSelect: (id: string | "all") => void;
   onDelete?: (id: string) => void;
+  onEdit?: (category: CategoryEntity) => void;
+  onMove?: (categoryId: string, direction: "up" | "down") => void;
 };
 
-export function CategoryList({ categories, activeCategoryId, onSelect, onDelete }: CategoryListProps) {
+export function CategoryList({
+  categories,
+  activeCategoryId,
+  onSelect,
+  onDelete,
+  onEdit,
+  onMove
+}: CategoryListProps) {
   return (
     <div style={{ display: "grid", gap: 8 }}>
       <button
@@ -20,10 +29,18 @@ export function CategoryList({ categories, activeCategoryId, onSelect, onDelete 
       >
         全部标签页
       </button>
-      {categories.map((category) => (
+      {categories
+        .slice()
+        .sort((left, right) => left.sortOrder - right.sortOrder)
+        .map((category, index, sortedCategories) => (
         <div
           key={category.categoryId}
-          style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center" }}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto",
+            gap: 8,
+            alignItems: "center"
+          }}
         >
           <button
             className="button-secondary"
@@ -37,13 +54,38 @@ export function CategoryList({ categories, activeCategoryId, onSelect, onDelete 
           >
             {category.name}
           </button>
-          {onDelete && category.sourceType === "manual" ? (
-            <button className="button-secondary" onClick={() => onDelete(category.categoryId)}>
-              删除
-            </button>
-          ) : null}
+          <div style={{ display: "flex", gap: 6 }}>
+            {onMove ? (
+              <>
+                <button
+                  className="button-secondary"
+                  onClick={() => onMove(category.categoryId, "up")}
+                  disabled={index === 0}
+                >
+                  ↑
+                </button>
+                <button
+                  className="button-secondary"
+                  onClick={() => onMove(category.categoryId, "down")}
+                  disabled={index === sortedCategories.length - 1}
+                >
+                  ↓
+                </button>
+              </>
+            ) : null}
+            {onEdit && category.sourceType === "manual" ? (
+              <button className="button-secondary" onClick={() => onEdit(category)}>
+                改名
+              </button>
+            ) : null}
+            {onDelete && category.sourceType === "manual" ? (
+              <button className="button-secondary" onClick={() => onDelete(category.categoryId)}>
+                删除
+              </button>
+            ) : null}
+          </div>
         </div>
-      ))}
+        ))}
     </div>
   );
 }

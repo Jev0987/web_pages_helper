@@ -1,4 +1,5 @@
 import type { TabEntity } from "../../types/tab";
+import type { CategoryEntity } from "../../types/category";
 
 type TabItemProps = {
   tab: TabEntity;
@@ -7,6 +8,8 @@ type TabItemProps = {
   onActivate: (tabId: number) => void;
   onClose: (tabId: number) => void;
   onEdit?: (tabId: number) => void;
+  categories?: CategoryEntity[];
+  onChangeCategory?: (tabId: number, categoryId?: string) => void;
 };
 
 export function TabItem({
@@ -15,7 +18,9 @@ export function TabItem({
   onSelect,
   onActivate,
   onClose,
-  onEdit
+  onEdit,
+  categories,
+  onChangeCategory
 }: TabItemProps) {
   return (
     <div
@@ -23,7 +28,7 @@ export function TabItem({
       style={{
         padding: 12,
         display: "grid",
-        gridTemplateColumns: onSelect ? "24px 1fr auto" : "1fr auto",
+        gridTemplateColumns: onSelect ? "24px minmax(0, 1fr) auto" : "minmax(0, 1fr) auto",
         gap: 12,
         alignItems: "center"
       }}
@@ -72,6 +77,21 @@ export function TabItem({
         </div>
       </button>
       <div style={{ display: "flex", gap: 8 }}>
+        {categories && onChangeCategory ? (
+          <select
+            className="field"
+            style={{ width: 130, padding: "8px 10px" }}
+            value={tab.categoryId ?? ""}
+            onChange={(event) => onChangeCategory(tab.tabId, event.target.value || undefined)}
+          >
+            <option value="">未分类</option>
+            {categories.map((category) => (
+              <option key={category.categoryId} value={category.categoryId}>
+                {category.name}
+              </option>
+            ))}
+          </select>
+        ) : null}
         {onEdit ? (
           <button className="button-secondary" onClick={() => onEdit(tab.tabId)}>
             编辑

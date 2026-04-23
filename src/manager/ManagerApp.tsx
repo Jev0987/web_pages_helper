@@ -7,7 +7,7 @@ import { useTabStore } from "../store/tab-store";
 import { useUiStore } from "../store/ui-store";
 import type { CategoryEntity } from "../types/category";
 import type { RuntimeMessage, RuntimeResponse } from "../types/message";
-import type { TabEntity } from "../types/tab";
+import type { RecentlyClosedTab, TabEntity } from "../types/tab";
 
 async function sendMessage(message: RuntimeMessage): Promise<RuntimeResponse> {
   return chrome.runtime.sendMessage(message);
@@ -19,6 +19,10 @@ function toTabs(data: RuntimeResponse["data"]): TabEntity[] {
 
 function toCategories(data: RuntimeResponse["data"]): CategoryEntity[] {
   return (data ?? []) as CategoryEntity[];
+}
+
+function toRecentlyClosed(data: RuntimeResponse["data"]): RecentlyClosedTab[] {
+  return (data ?? []) as RecentlyClosedTab[];
 }
 
 function createManualCategory(name: string, sortOrder: number): CategoryEntity {
@@ -41,16 +45,20 @@ export function ManagerApp() {
   const { categories, setCategories, activeCategoryId, setActiveCategoryId } = useCategoryStore();
   const { editingTabId, setEditingTabId, loading, setLoading } = useUiStore();
   const [draftCategoryName, setDraftCategoryName] = useState("");
+  const [editingCategory, setEditingCategory] = useState<CategoryEntity | null>(null);
+  const [editingCategoryName, setEditingCategoryName] = useState("");
   const [bulkCategoryId, setBulkCategoryId] = useState("");
+  const [recentlyClosed, setRecentlyClosed] = useState<RecentlyClosedTab[]>([]);
   const editingTab = tabs.find((tab) => tab.tabId === editingTabId) ?? null;
 
   useEffect(() => {
     async function bootstrap() {
       setLoading(true);
 
-      const [tabsResponse, categoriesResponse] = await Promise.all([
+      const [tabsResponse, categoriesResponse, recentResponse] = await Promise.all([
         sendMessage({ type: "GET_TABS", scope: "allWindows" }),
-        sendMessage({ type: "GET_CATEGORIES" })
+        sendMessage({ type: "GET_CATEGORIES" }),
+        sendMessage({ type: "GET_RECENTLY_CLOSED" })
       ]);
 
       if (tabsResponse.ok && Array.isArray(tabsResponse.data)) {
@@ -59,6 +67,10 @@ export function ManagerApp() {
 
       if (categoriesResponse.ok && Array.isArray(categoriesResponse.data)) {
         setCategories(toCategories(categoriesResponse.data));
+      }
+
+      if (recentResponse.ok && Array.isArray(recentResponse.data)) {
+        setRecentlyClosed(toRecentlyClosed(recentResponse.data));
       }
 
       setLoading(false);
@@ -83,6 +95,13 @@ export function ManagerApp() {
     }
   }
 
+  async function refreshRecentlyClosed() {
+    const response = await sendMessage({ type: "GET_RECENTLY_CLOSED" });
+    if (response.ok && Array.isArray(response.data)) {
+      setRecentlyClosed(toRecentlyClosed(response.data));
+    }
+  }
+
   return (
     <div className="app-shell">
       <div
@@ -99,6 +118,19 @@ export function ManagerApp() {
             categories={categories}
             activeCategoryId={activeCategoryId}
             onSelect={setActiveCategoryId}
+            onEdit={(category) => {
+              setEditingCategory(category);
+              setEditingCategoryName(category.name);
+            }}
+            onMove={async (categoryId, direction) => {
+              const response = await sendMessage({ type: "REORDER_CATEGORY", categoryId, direction });
+              if (response.ok && Array.isArray(response.data)) {
+                setCategories(toCategories(response.data));
+                return;
+              }
+
+              window.alert(response.error ?? "分类排序失败");
+            }}
             onDelete={async (categoryId) => {
               const response = await sendMessage({ type: "DELETE_CATEGORY", categoryId });
               if (response.ok && Array.isArray(response.data)) {
@@ -113,6 +145,50 @@ export function ManagerApp() {
               window.alert(response.error ?? "删除分类失败");
             }}
           />
+          {editingCategory ? (
+            <div style={{ marginTop: 16, display: "grid", gap: 8 }}>
+              <input
+                className="field"
+                placeholder="修改分类名称"
+                value={editingCategoryName}
+                onChange={(event) => setEditingCategoryName(event.target.value)}
+              />
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  className="button-primary"
+                  onClick={async () => {
+                    const response = await sendMessage({
+                      type: "UPSERT_CATEGORY",
+                      payload: {
+                        ...editingCategory,
+                        name: editingCategoryName
+                      }
+                    });
+
+                    if (response.ok && Array.isArray(response.data)) {
+                      setCategories(toCategories(response.data));
+                      setEditingCategory(null);
+                      setEditingCategoryName("");
+                      return;
+                    }
+
+                    window.alert(response.error ?? "分类改名失败");
+                  }}
+                >
+                  保存改名
+                </button>
+                <button
+                  className="button-secondary"
+                  onClick={() => {
+                    setEditingCategory(null);
+                    setEditingCategoryName("");
+                  }}
+                >
+                  取消
+                </button>
+              </div>
+            </div>
+          ) : null}
           <div style={{ marginTop: 16, display: "grid", gap: 8 }}>
             <input
               className="field"
@@ -243,11 +319,79 @@ export function ManagerApp() {
                     onClose={async (tabId) => {
                       await sendMessage({ type: "CLOSE_TAB", tabId });
                       await refreshTabs();
+                      await refreshRecentlyClosed();
                     }}
                     onEdit={setEditingTabId}
+                    categories={categories}
+                    onChangeCategory={async (tabId, categoryId) => {
+                      await sendMessage({
+                        type: "UPDATE_TAB_META",
+                        tabId,
+                        payload: {
+                          categoryId,
+                          classificationMode: "manual"
+                        }
+                      });
+                      await refreshTabs();
+                    }}
                   />
                 ))
               )}
+            </div>
+
+            <div className="panel" style={{ padding: 16 }}>
+              <SectionTitle title="最近关闭" subtitle="可恢复最近关闭的标签页" />
+              <div style={{ display: "grid", gap: 8 }}>
+                {recentlyClosed.length === 0 ? (
+                  <div className="muted">最近没有可恢复的标签页。</div>
+                ) : (
+                  recentlyClosed.map((tab) => (
+                    <div
+                      key={tab.id}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "minmax(0, 1fr) auto",
+                        gap: 12,
+                        alignItems: "center"
+                      }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontWeight: 600,
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis"
+                          }}
+                        >
+                          {tab.customTitle || tab.title}
+                        </div>
+                        <div className="muted" style={{ fontSize: 12 }}>
+                          {tab.domain}
+                        </div>
+                      </div>
+                      <button
+                        className="button-secondary"
+                        onClick={async () => {
+                          const response = await sendMessage({
+                            type: "RESTORE_CLOSED_TAB",
+                            id: tab.id
+                          });
+                          if (response.ok && Array.isArray(response.data)) {
+                            setRecentlyClosed(toRecentlyClosed(response.data));
+                            await refreshTabs();
+                            return;
+                          }
+
+                          window.alert(response.error ?? "恢复标签页失败");
+                        }}
+                      >
+                        恢复
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </main>

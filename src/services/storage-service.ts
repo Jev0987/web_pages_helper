@@ -1,9 +1,10 @@
 import type { CategoryEntity } from "../types/category";
-import type { StoredTabMeta } from "../types/tab";
+import type { RecentlyClosedTab, StoredTabMeta } from "../types/tab";
 
 type StorageSchema = {
   categories: CategoryEntity[];
   tabsMeta: Record<string, StoredTabMeta>;
+  recentlyClosed: RecentlyClosedTab[];
   preferences: {
     defaultView: "list" | "group";
     autoClassifyOnOpen: boolean;
@@ -15,6 +16,7 @@ type StorageSchema = {
 const STORAGE_KEYS = {
   categories: "categories",
   tabsMeta: "tabsMeta",
+  recentlyClosed: "recentlyClosed",
   preferences: "preferences"
 } as const;
 
@@ -53,7 +55,7 @@ export async function getCategories(): Promise<CategoryEntity[]> {
     return defaultCategories;
   }
 
-  return categories;
+  return [...categories].sort((left, right) => left.sortOrder - right.sortOrder);
 }
 
 export async function saveCategories(categories: CategoryEntity[]): Promise<void> {
@@ -105,6 +107,26 @@ export async function removeTabMeta(tabId: number): Promise<void> {
   const current = await getTabsMeta();
   delete current[String(tabId)];
   await chrome.storage.local.set({ [STORAGE_KEYS.tabsMeta]: current });
+}
+
+export async function getRecentlyClosed(): Promise<RecentlyClosedTab[]> {
+  const result = await chrome.storage.local.get(STORAGE_KEYS.recentlyClosed);
+  return (result[STORAGE_KEYS.recentlyClosed] as RecentlyClosedTab[] | undefined) ?? [];
+}
+
+export async function saveRecentlyClosed(tabs: RecentlyClosedTab[]): Promise<void> {
+  await chrome.storage.local.set({ [STORAGE_KEYS.recentlyClosed]: tabs });
+}
+
+export async function addRecentlyClosed(tab: RecentlyClosedTab): Promise<void> {
+  const current = await getRecentlyClosed();
+  const next = [tab, ...current].slice(0, 20);
+  await saveRecentlyClosed(next);
+}
+
+export async function removeRecentlyClosed(id: string): Promise<void> {
+  const current = await getRecentlyClosed();
+  await saveRecentlyClosed(current.filter((tab) => tab.id !== id));
 }
 
 export async function getPreferences(): Promise<StorageSchema["preferences"]> {

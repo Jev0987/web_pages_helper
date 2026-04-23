@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { CategoryEntity } from "../types/category";
 import type { StoredTabMeta } from "../types/tab";
-import { clearCategoryFromTabsMeta, validateCategoryName } from "./category-service";
+import {
+  clearCategoryFromTabsMeta,
+  reorderCategories,
+  validateCategoryName
+} from "./category-service";
 
 function makeCategory(categoryId: string, name: string): CategoryEntity {
   const now = Date.now();
@@ -54,5 +58,32 @@ describe("clearCategoryFromTabsMeta", () => {
     expect(result["1"]?.classificationMode).toBe("auto");
     expect(result["1"]?.customTitle).toBe("Task Board");
     expect(result["2"]).toEqual(meta["2"]);
+  });
+});
+
+describe("reorderCategories", () => {
+  it("swaps sort order with the previous category when moving up", () => {
+    const result = reorderCategories(
+      [
+        { ...makeCategory("a", "A"), sortOrder: 0 },
+        { ...makeCategory("b", "B"), sortOrder: 1 },
+        { ...makeCategory("c", "C"), sortOrder: 2 }
+      ],
+      "c",
+      "up"
+    );
+
+    expect(result.map((item) => item.categoryId)).toEqual(["a", "c", "b"]);
+  });
+
+  it("keeps order unchanged when target cannot move further", () => {
+    const input = [
+      { ...makeCategory("a", "A"), sortOrder: 0 },
+      { ...makeCategory("b", "B"), sortOrder: 1 }
+    ];
+
+    const result = reorderCategories(input, "a", "up");
+
+    expect(result.map((item) => item.categoryId)).toEqual(["a", "b"]);
   });
 });

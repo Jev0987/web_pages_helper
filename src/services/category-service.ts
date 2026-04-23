@@ -52,6 +52,36 @@ export function clearCategoryFromTabsMeta(
   );
 }
 
+export function reorderCategories(
+  categories: CategoryEntity[],
+  categoryId: string,
+  direction: "up" | "down"
+): CategoryEntity[] {
+  const sorted = [...categories].sort((left, right) => left.sortOrder - right.sortOrder);
+  const index = sorted.findIndex((item) => item.categoryId === categoryId);
+
+  if (index === -1) {
+    return sorted;
+  }
+
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (targetIndex < 0 || targetIndex >= sorted.length) {
+    return sorted;
+  }
+
+  const current = sorted[index];
+  const target = sorted[targetIndex];
+
+  if (!current || !target) {
+    return sorted;
+  }
+
+  sorted[index] = { ...target, sortOrder: current.sortOrder, updatedAt: Date.now() };
+  sorted[targetIndex] = { ...current, sortOrder: target.sortOrder, updatedAt: Date.now() };
+
+  return sorted.sort((left, right) => left.sortOrder - right.sortOrder);
+}
+
 export async function upsertCategory(nextCategory: CategoryEntity): Promise<CategoryEntity[]> {
   const categories = await getCategories();
   const normalizedName = validateCategoryName(categories, nextCategory);
@@ -90,5 +120,15 @@ export async function deleteCategory(categoryId: string): Promise<CategoryEntity
   const nextTabsMeta = clearCategoryFromTabsMeta(await getTabsMeta(), categoryId);
 
   await Promise.all([saveCategories(nextCategories), setTabsMeta(nextTabsMeta)]);
+  return nextCategories;
+}
+
+export async function reorderCategory(
+  categoryId: string,
+  direction: "up" | "down"
+): Promise<CategoryEntity[]> {
+  const categories = await getCategories();
+  const nextCategories = reorderCategories(categories, categoryId, direction);
+  await saveCategories(nextCategories);
   return nextCategories;
 }

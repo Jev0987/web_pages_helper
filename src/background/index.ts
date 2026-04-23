@@ -1,10 +1,20 @@
 import { classifyTabs } from "../services/classification-service";
-import { deleteCategory, upsertCategory } from "../services/category-service";
-import { activateTab, closeTab, closeTabs, getTabs } from "../services/tab-service";
+import { deleteCategory, reorderCategory, upsertCategory } from "../services/category-service";
 import {
+  activateTab,
+  buildRecentlyClosedTab,
+  closeTab,
+  closeTabs,
+  getTabs,
+  restoreClosedTab
+} from "../services/tab-service";
+import {
+  addRecentlyClosed,
   getCategories,
   getPreferences,
+  getRecentlyClosed,
   getTabsMeta,
+  removeRecentlyClosed,
   removeTabMeta,
   setTabsMeta,
   updateManyTabsMeta,
@@ -64,6 +74,24 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   void removeTabMeta(tabId);
 });
 
+async function snapshotTabsForClose(tabIds: number[]): Promise<void> {
+  const metaMap = await getTabsMeta();
+  const snapshots = await Promise.all(
+    tabIds.map(async (tabId) => {
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        return buildRecentlyClosedTab(tab, metaMap[String(tabId)]);
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  await Promise.all(
+    snapshots.filter((tab): tab is NonNullable<typeof tab> => Boolean(tab)).map(addRecentlyClosed)
+  );
+}
+
 chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResponse) => {
   void (async () => {
     try {
@@ -79,19 +107,46 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
           response = { ok: true, data: await getCategories() };
           break;
         }
+        case "GET_RECENTLY_CLOSED": {
+          response = { ok: true, data: await getRecentlyClosed() };
+          break;
+        }
         case "ACTIVATE_TAB": {
           await activateTab(message.tabId);
           response = { ok: true, data: null };
           break;
         }
         case "CLOSE_TAB": {
+          await snapshotTabsForClose([message.tabId]);
           await closeTab(message.tabId);
           response = { ok: true, data: null };
           break;
         }
         case "CLOSE_TABS": {
+          await snapshotTabsForClose(message.tabIds);
           await closeTabs(message.tabIds);
           response = { ok: true, data: null };
+          break;
+        }
+        case "RESTORE_CLOSED_TAB": {
+          const recentTabs = await getRecentlyClosed();
+          const target = recentTabs.find((tab) => tab.id === message.id);
+          if (!target) {
+            response = { ok: false, error: "未找到可恢复的标签页" };
+            break;
+          }
+
+          const tabId = await restoreClosedTab(target);
+          if (tabId >= 0) {
+            await updateTabMeta(tabId, {
+              categoryId: target.categoryId,
+              customTitle: target.customTitle,
+              note: target.note,
+              classificationMode: target.classificationMode
+            });
+          }
+          await removeRecentlyClosed(message.id);
+          response = { ok: true, data: await getRecentlyClosed() };
           break;
         }
         case "MOVE_TABS_TO_CATEGORY": {
@@ -115,6 +170,11 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
         }
         case "DELETE_CATEGORY": {
           const categories = await deleteCategory(message.categoryId);
+          response = { ok: true, data: categories };
+          break;
+        }
+        case "REORDER_CATEGORY": {
+          const categories = await reorderCategory(message.categoryId, message.direction);
           response = { ok: true, data: categories };
           break;
         }
