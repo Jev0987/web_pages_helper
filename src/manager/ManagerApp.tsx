@@ -4,7 +4,6 @@ import { SectionTitle } from "../components/common/SectionTitle";
 import { TabItem } from "../components/tabs/TabItem";
 import { useCategoryStore } from "../store/category-store";
 import { useTabStore } from "../store/tab-store";
-import { useUiStore } from "../store/ui-store";
 import type { CategoryEntity } from "../types/category";
 import type { RuntimeMessage, RuntimeResponse } from "../types/message";
 import type { RecentlyClosedTab, TabEntity } from "../types/tab";
@@ -43,7 +42,7 @@ export function ManagerApp() {
   const { tabs, setTabs, selectedTabIds, toggleSelectedTab, clearSelection, search, setSearch } =
     useTabStore();
   const { categories, setCategories, activeCategoryId, setActiveCategoryId } = useCategoryStore();
-  const { editingTabId, setEditingTabId, loading, setLoading } = useUiStore();
+  const [loading, setLoading] = useState(false);
   const [draftCategoryName, setDraftCategoryName] = useState("");
   const [editingCategory, setEditingCategory] = useState<CategoryEntity | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState("");
@@ -54,7 +53,7 @@ export function ManagerApp() {
   const [collapsedColumns, setCollapsedColumns] = useState<Record<string, boolean>>({});
   const [draggingTabId, setDraggingTabId] = useState<number | null>(null);
   const [dropCategoryId, setDropCategoryId] = useState<string | null>(null);
-  const editingTab = tabs.find((tab) => tab.tabId === editingTabId) ?? null;
+  const [closingTabIds, setClosingTabIds] = useState<number[]>([]);
   const activeCategoryName =
     activeCategoryId === "all"
       ? "全部标签页"
@@ -168,18 +167,17 @@ export function ManagerApp() {
     }));
   }
 
+  async function handleCloseTab(tabId: number) {
+    setClosingTabIds((current) => [...current, tabId]);
+    await new Promise((resolve) => setTimeout(resolve, 940));
+    await sendMessage({ type: "CLOSE_TAB", tabId });
+    await refreshTabs();
+    await refreshRecentlyClosed();
+    setClosingTabIds((current) => current.filter((id) => id !== tabId));
+  }
+
   return (
     <div className="app-shell">
-      <section className="panel workspace-hero" style={{ marginBottom: 18 }}>
-        <div>
-          <h1>标签工作台</h1>
-          <p>这是独立标签页视图。所有浏览器标签会以卡片窗口的方式展示，适合集中分类、检索、批量操作和恢复最近关闭的页面。</p>
-        </div>
-        <div className="chip" style={{ justifySelf: "end" }}>
-          当前视图: {viewMode === "grid" ? "卡片网格" : "分类看板"}
-        </div>
-      </section>
-
       <div className="stat-grid" style={{ marginBottom: 18 }}>
         <div className="stat-card panel">
           <strong>{tabs.length}</strong>
@@ -195,25 +193,29 @@ export function ManagerApp() {
         </div>
       </div>
 
-      <div className="workspace-layout">
+      <div className="workspace-layout workspace-layout-wide">
         <aside className="panel workspace-sidebar">
           <SectionTitle title="分类" subtitle="系统分类与自定义分类" />
           <CategoryList
             categories={categories}
             activeCategoryId={activeCategoryId}
             onSelect={setActiveCategoryId}
-            onEdit={(category) => {
-              setEditingCategory(category);
-              setEditingCategoryName(category.name);
-            }}
-            onMove={async (categoryId, direction) => {
-              const response = await sendMessage({ type: "REORDER_CATEGORY", categoryId, direction });
+            onReorder={async (draggedCategoryId, targetCategoryId) => {
+              const response = await sendMessage({
+                type: "MOVE_CATEGORY",
+                draggedCategoryId,
+                targetCategoryId
+              });
               if (response.ok && Array.isArray(response.data)) {
                 setCategories(toCategories(response.data));
                 return;
               }
 
-              window.alert(response.error ?? "分类排序失败");
+              window.alert(response.error ?? "分类拖拽排序失败");
+            }}
+            onEdit={(category) => {
+              setEditingCategory(category);
+              setEditingCategoryName(category.name);
             }}
             onDelete={async (categoryId) => {
               const response = await sendMessage({ type: "DELETE_CATEGORY", categoryId });
@@ -467,14 +469,10 @@ export function ManagerApp() {
                               key={tab.tabId}
                               tab={tab}
                               selected={selectedTabIds.includes(tab.tabId)}
+                              closing={closingTabIds.includes(tab.tabId)}
                               onSelect={toggleSelectedTab}
                               onActivate={(tabId) => void sendMessage({ type: "ACTIVATE_TAB", tabId })}
-                              onClose={async (tabId) => {
-                                await sendMessage({ type: "CLOSE_TAB", tabId });
-                                await refreshTabs();
-                                await refreshRecentlyClosed();
-                              }}
-                              onEdit={setEditingTabId}
+                              onClose={handleCloseTab}
                               categories={categories}
                               onChangeCategory={moveTabToCategory}
                               draggable
@@ -498,14 +496,10 @@ export function ManagerApp() {
                       key={tab.tabId}
                       tab={tab}
                       selected={selectedTabIds.includes(tab.tabId)}
+                      closing={closingTabIds.includes(tab.tabId)}
                       onSelect={toggleSelectedTab}
                       onActivate={(tabId) => void sendMessage({ type: "ACTIVATE_TAB", tabId })}
-                      onClose={async (tabId) => {
-                        await sendMessage({ type: "CLOSE_TAB", tabId });
-                        await refreshTabs();
-                        await refreshRecentlyClosed();
-                      }}
-                      onEdit={setEditingTabId}
+                      onClose={handleCloseTab}
                       categories={categories}
                       onChangeCategory={moveTabToCategory}
                     />
@@ -515,7 +509,28 @@ export function ManagerApp() {
             </div>
 
             <div className="panel" style={{ padding: 16 }}>
-              <SectionTitle title="最近关闭" subtitle="可恢复最近关闭的标签页" />
+              <SectionTitle
+                title="最近关闭"
+                subtitle="可恢复最近关闭的标签页"
+                action={
+                  recentlyClosed.length > 0 ? (
+                    <button
+                      className="button-secondary"
+                      onClick={async () => {
+                        const response = await sendMessage({ type: "CLEAR_RECENTLY_CLOSED" });
+                        if (response.ok) {
+                          setRecentlyClosed([]);
+                          return;
+                        }
+
+                        window.alert(response.error ?? "清空最近关闭失败");
+                      }}
+                    >
+                      清空
+                    </button>
+                  ) : undefined
+                }
+              />
               <div className="recent-grid">
                 {recentlyClosed.length === 0 ? (
                   <div className="muted">最近没有可恢复的标签页。</div>
@@ -565,105 +580,7 @@ export function ManagerApp() {
             </div>
           </div>
         </main>
-
-        <aside className="panel workspace-detail">
-          <SectionTitle title="标签详情" subtitle="编辑自定义名称、备注和分类" />
-          {editingTab ? (
-            <EditPanel
-              tabId={editingTab.tabId}
-              title={editingTab.customTitle ?? editingTab.title}
-              note={editingTab.note ?? ""}
-              categoryId={editingTab.categoryId ?? ""}
-              categories={categories}
-              onSaved={async () => {
-                setEditingTabId(null);
-                await refreshTabs();
-              }}
-            />
-          ) : (
-            <div className="muted">从中间列表选择“编辑”后在这里修改信息。</div>
-          )}
-        </aside>
       </div>
-    </div>
-  );
-}
-
-type EditPanelProps = {
-  tabId: number;
-  title: string;
-  note: string;
-  categoryId: string;
-  categories: CategoryEntity[];
-  onSaved: () => Promise<void>;
-};
-
-function EditPanel({ tabId, title, note, categoryId, categories, onSaved }: EditPanelProps) {
-  const [draftTitle, setDraftTitle] = useState(title);
-  const [draftNote, setDraftNote] = useState(note);
-  const [draftCategoryId, setDraftCategoryId] = useState(categoryId);
-
-  useEffect(() => {
-    setDraftTitle(title);
-    setDraftNote(note);
-    setDraftCategoryId(categoryId);
-  }, [categoryId, note, title]);
-
-  return (
-    <div style={{ display: "grid", gap: 12 }}>
-      <label style={{ display: "grid", gap: 6 }}>
-        <span className="muted">自定义标题</span>
-        <input
-          className="field"
-          value={draftTitle}
-          onChange={(event) => setDraftTitle(event.target.value)}
-        />
-      </label>
-
-      <label style={{ display: "grid", gap: 6 }}>
-        <span className="muted">备注</span>
-        <textarea
-          className="field"
-          rows={6}
-          value={draftNote}
-          onChange={(event) => setDraftNote(event.target.value)}
-        />
-      </label>
-
-      <label style={{ display: "grid", gap: 6 }}>
-        <span className="muted">分类</span>
-        <select
-          className="field"
-          value={draftCategoryId}
-          onChange={(event) => setDraftCategoryId(event.target.value)}
-        >
-          <option value="">未分类</option>
-          {categories.map((category) => (
-            <option key={category.categoryId} value={category.categoryId}>
-              {category.name}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <button
-        className="button-primary"
-        onClick={async () => {
-          await sendMessage({
-            type: "UPDATE_TAB_META",
-            tabId,
-            payload: {
-              customTitle: draftTitle,
-              note: draftNote,
-              categoryId: draftCategoryId || undefined,
-              classificationMode: "manual"
-            }
-          });
-          await onSaved();
-        }}
-      >
-        保存修改
-      </button>
     </div>
   );
 }

@@ -129,6 +129,10 @@ export async function removeRecentlyClosed(id: string): Promise<void> {
   await saveRecentlyClosed(current.filter((tab) => tab.id !== id));
 }
 
+export async function clearRecentlyClosed(): Promise<void> {
+  await saveRecentlyClosed([]);
+}
+
 export async function getPreferences(): Promise<StorageSchema["preferences"]> {
   const result = await chrome.storage.local.get(STORAGE_KEYS.preferences);
   return (

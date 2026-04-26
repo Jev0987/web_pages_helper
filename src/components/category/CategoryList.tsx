@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { CategoryEntity } from "../../types/category";
 
 type CategoryListProps = {
@@ -6,7 +7,7 @@ type CategoryListProps = {
   onSelect: (id: string | "all") => void;
   onDelete?: (id: string) => void;
   onEdit?: (category: CategoryEntity) => void;
-  onMove?: (categoryId: string, direction: "up" | "down") => void;
+  onReorder?: (draggedCategoryId: string, targetCategoryId: string) => void;
 };
 
 export function CategoryList({
@@ -15,8 +16,11 @@ export function CategoryList({
   onSelect,
   onDelete,
   onEdit,
-  onMove
+  onReorder
 }: CategoryListProps) {
+  const [draggingCategoryId, setDraggingCategoryId] = useState<string | null>(null);
+  const [dragOverCategoryId, setDragOverCategoryId] = useState<string | null>(null);
+
   return (
     <div style={{ display: "grid", gap: 8 }}>
       <button
@@ -32,9 +36,46 @@ export function CategoryList({
       {categories
         .slice()
         .sort((left, right) => left.sortOrder - right.sortOrder)
-        .map((category, index, sortedCategories) => (
+        .map((category) => (
         <div
           key={category.categoryId}
+          className={`category-row${dragOverCategoryId === category.categoryId ? " is-drop-target" : ""}${draggingCategoryId === category.categoryId ? " is-dragging" : ""}`}
+          draggable={Boolean(onReorder)}
+          onDragStart={(event) => {
+            if (!onReorder) {
+              return;
+            }
+            event.dataTransfer.setData("text/category-id", category.categoryId);
+            event.dataTransfer.effectAllowed = "move";
+            setDraggingCategoryId(category.categoryId);
+          }}
+          onDragOver={(event) => {
+            if (!onReorder) {
+              return;
+            }
+            event.preventDefault();
+            setDragOverCategoryId(category.categoryId);
+          }}
+          onDragLeave={() => {
+            setDragOverCategoryId((current: string | null) =>
+              current === category.categoryId ? null : current
+            );
+          }}
+          onDrop={(event) => {
+            if (!onReorder) {
+              return;
+            }
+            event.preventDefault();
+            setDragOverCategoryId(null);
+            const draggedCategoryId = event.dataTransfer.getData("text/category-id");
+            if (draggedCategoryId && draggedCategoryId !== category.categoryId) {
+              onReorder(draggedCategoryId, category.categoryId);
+            }
+          }}
+          onDragEnd={() => {
+            setDraggingCategoryId(null);
+            setDragOverCategoryId(null);
+          }}
           style={{
             display: "grid",
             gridTemplateColumns: "1fr auto",
@@ -55,24 +96,6 @@ export function CategoryList({
             {category.name}
           </button>
           <div style={{ display: "flex", gap: 6 }}>
-            {onMove ? (
-              <>
-                <button
-                  className="button-secondary"
-                  onClick={() => onMove(category.categoryId, "up")}
-                  disabled={index === 0}
-                >
-                  ↑
-                </button>
-                <button
-                  className="button-secondary"
-                  onClick={() => onMove(category.categoryId, "down")}
-                  disabled={index === sortedCategories.length - 1}
-                >
-                  ↓
-                </button>
-              </>
-            ) : null}
             {onEdit && category.sourceType === "manual" ? (
               <button className="button-secondary" onClick={() => onEdit(category)}>
                 改名

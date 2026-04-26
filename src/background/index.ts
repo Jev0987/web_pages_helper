@@ -1,5 +1,10 @@
 import { classifyTabs } from "../services/classification-service";
-import { deleteCategory, reorderCategory, upsertCategory } from "../services/category-service";
+import {
+  deleteCategory,
+  moveCategory,
+  reorderCategory,
+  upsertCategory
+} from "../services/category-service";
 import {
   activateTab,
   buildRecentlyClosedTab,
@@ -10,6 +15,7 @@ import {
 } from "../services/tab-service";
 import {
   addRecentlyClosed,
+  clearRecentlyClosed,
   getCategories,
   getPreferences,
   getRecentlyClosed,
@@ -111,6 +117,11 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
           response = { ok: true, data: await getRecentlyClosed() };
           break;
         }
+        case "CLEAR_RECENTLY_CLOSED": {
+          await clearRecentlyClosed();
+          response = { ok: true, data: [] };
+          break;
+        }
         case "ACTIVATE_TAB": {
           await activateTab(message.tabId);
           response = { ok: true, data: null };
@@ -170,6 +181,14 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
         }
         case "DELETE_CATEGORY": {
           const categories = await deleteCategory(message.categoryId);
+          response = { ok: true, data: categories };
+          break;
+        }
+        case "MOVE_CATEGORY": {
+          const categories = await moveCategory(
+            message.draggedCategoryId,
+            message.targetCategoryId
+          );
           response = { ok: true, data: categories };
           break;
         }

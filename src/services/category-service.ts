@@ -82,6 +82,34 @@ export function reorderCategories(
   return sorted.sort((left, right) => left.sortOrder - right.sortOrder);
 }
 
+export function moveCategoryBefore(
+  categories: CategoryEntity[],
+  draggedCategoryId: string,
+  targetCategoryId: string
+): CategoryEntity[] {
+  const sorted = [...categories].sort((left, right) => left.sortOrder - right.sortOrder);
+  const draggedIndex = sorted.findIndex((item) => item.categoryId === draggedCategoryId);
+  const targetIndex = sorted.findIndex((item) => item.categoryId === targetCategoryId);
+
+  if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) {
+    return sorted;
+  }
+
+  const [draggedCategory] = sorted.splice(draggedIndex, 1);
+  if (!draggedCategory) {
+    return sorted;
+  }
+
+  const insertIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
+  sorted.splice(insertIndex, 0, draggedCategory);
+
+  return sorted.map((category, index) => ({
+    ...category,
+    sortOrder: index,
+    updatedAt: Date.now()
+  }));
+}
+
 export async function upsertCategory(nextCategory: CategoryEntity): Promise<CategoryEntity[]> {
   const categories = await getCategories();
   const normalizedName = validateCategoryName(categories, nextCategory);
@@ -129,6 +157,16 @@ export async function reorderCategory(
 ): Promise<CategoryEntity[]> {
   const categories = await getCategories();
   const nextCategories = reorderCategories(categories, categoryId, direction);
+  await saveCategories(nextCategories);
+  return nextCategories;
+}
+
+export async function moveCategory(
+  draggedCategoryId: string,
+  targetCategoryId: string
+): Promise<CategoryEntity[]> {
+  const categories = await getCategories();
+  const nextCategories = moveCategoryBefore(categories, draggedCategoryId, targetCategoryId);
   await saveCategories(nextCategories);
   return nextCategories;
 }

@@ -5,6 +5,7 @@ export type RuntimeMessage =
   | { type: "GET_TABS"; scope: "currentWindow" | "allWindows" }
   | { type: "GET_CATEGORIES" }
   | { type: "GET_RECENTLY_CLOSED" }
+  | { type: "CLEAR_RECENTLY_CLOSED" }
   | { type: "ACTIVATE_TAB"; tabId: number }
   | { type: "CLOSE_TAB"; tabId: number }
   | { type: "CLOSE_TABS"; tabIds: number[] }
@@ -13,6 +14,7 @@ export type RuntimeMessage =
   | { type: "RECLASSIFY_TABS"; scope: "currentWindow" | "allWindows" }
   | { type: "UPSERT_CATEGORY"; payload: CategoryEntity }
   | { type: "DELETE_CATEGORY"; categoryId: string }
+  | { type: "MOVE_CATEGORY"; draggedCategoryId: string; targetCategoryId: string }
   | { type: "REORDER_CATEGORY"; categoryId: string; direction: "up" | "down" }
   | {
       type: "UPDATE_TAB_META";

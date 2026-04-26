@@ -3,6 +3,7 @@ import type { CategoryEntity } from "../types/category";
 import type { StoredTabMeta } from "../types/tab";
 import {
   clearCategoryFromTabsMeta,
+  moveCategoryBefore,
   reorderCategories,
   validateCategoryName
 } from "./category-service";
@@ -85,5 +86,22 @@ describe("reorderCategories", () => {
     const result = reorderCategories(input, "a", "up");
 
     expect(result.map((item) => item.categoryId)).toEqual(["a", "b"]);
+  });
+});
+
+describe("moveCategoryBefore", () => {
+  it("moves the dragged category before the target category and rewrites sort order", () => {
+    const result = moveCategoryBefore(
+      [
+        { ...makeCategory("a", "A"), sortOrder: 0 },
+        { ...makeCategory("b", "B"), sortOrder: 1 },
+        { ...makeCategory("c", "C"), sortOrder: 2 }
+      ],
+      "c",
+      "b"
+    );
+
+    expect(result.map((item) => item.categoryId)).toEqual(["a", "c", "b"]);
+    expect(result.map((item) => item.sortOrder)).toEqual([0, 1, 2]);
   });
 });
