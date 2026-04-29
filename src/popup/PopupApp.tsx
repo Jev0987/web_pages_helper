@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { SectionTitle } from "../components/common/SectionTitle";
 import { TabItem } from "../components/tabs/TabItem";
 import { useCategoryStore } from "../store/category-store";
@@ -24,6 +24,34 @@ export function PopupApp() {
   const { tabs, setTabs, search, setSearch } = useTabStore();
   const { categories, setCategories } = useCategoryStore();
   const { loading, setLoading } = useUiStore();
+  const [refreshState, setRefreshState] = useState<"idle" | "loading" | "success" | "error">(
+    "idle"
+  );
+
+  async function refreshTabs() {
+    setRefreshState("loading");
+    setLoading(true);
+    const response = await sendMessage({ type: "GET_TABS", scope: "currentWindow" });
+    if (response.ok && Array.isArray(response.data)) {
+      setTabs(toTabs(response.data));
+      setRefreshState("success");
+    } else {
+      setRefreshState("error");
+    }
+    setLoading(false);
+    window.setTimeout(() => {
+      setRefreshState("idle");
+    }, 1200);
+  }
+
+  const refreshLabel =
+    refreshState === "loading"
+      ? "刷新中..."
+      : refreshState === "success"
+        ? "已刷新"
+        : refreshState === "error"
+          ? "刷新失败"
+          : "刷新标签";
 
   useEffect(() => {
     async function bootstrap() {
@@ -60,12 +88,21 @@ export function PopupApp() {
           title="标签页管家"
           subtitle="统一查看当前窗口标签页并快速整理"
           action={
-            <button
-              className="button-primary"
-              onClick={() => chrome.runtime.openOptionsPage()}
-            >
-              管理页
-            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                className="button-secondary"
+                onClick={() => void refreshTabs()}
+                disabled={refreshState === "loading"}
+              >
+                {refreshLabel}
+              </button>
+              <button
+                className="button-primary"
+                onClick={() => chrome.runtime.openOptionsPage()}
+              >
+                管理页
+              </button>
+            </div>
           }
         />
 

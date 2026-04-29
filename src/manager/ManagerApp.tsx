@@ -48,12 +48,16 @@ export function ManagerApp() {
   const [editingCategoryName, setEditingCategoryName] = useState("");
   const [bulkCategoryId, setBulkCategoryId] = useState("");
   const [recentlyClosed, setRecentlyClosed] = useState<RecentlyClosedTab[]>([]);
+  const [showRecentlyClosed, setShowRecentlyClosed] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "board">("grid");
   const [boardSort, setBoardSort] = useState<"category" | "count">("category");
   const [collapsedColumns, setCollapsedColumns] = useState<Record<string, boolean>>({});
   const [draggingTabId, setDraggingTabId] = useState<number | null>(null);
   const [dropCategoryId, setDropCategoryId] = useState<string | null>(null);
   const [closingTabIds, setClosingTabIds] = useState<number[]>([]);
+  const [refreshState, setRefreshState] = useState<"idle" | "loading" | "success" | "error">(
+    "idle"
+  );
   const activeCategoryName =
     activeCategoryId === "all"
       ? "全部标签页"
@@ -135,11 +139,27 @@ export function ManagerApp() {
   }, [activeCategoryId, activeCategoryName, boardSort, categories, filteredTabs]);
 
   async function refreshTabs() {
+    setRefreshState("loading");
     const response = await sendMessage({ type: "GET_TABS", scope: "allWindows" });
     if (response.ok && Array.isArray(response.data)) {
       setTabs(toTabs(response.data));
+      setRefreshState("success");
+    } else {
+      setRefreshState("error");
     }
+    window.setTimeout(() => {
+      setRefreshState("idle");
+    }, 1200);
   }
+
+  const refreshLabel =
+    refreshState === "loading"
+      ? "刷新中..."
+      : refreshState === "success"
+        ? "已刷新"
+        : refreshState === "error"
+          ? "刷新失败"
+          : "刷新标签";
 
   async function refreshRecentlyClosed() {
     const response = await sendMessage({ type: "GET_RECENTLY_CLOSED" });
@@ -178,22 +198,21 @@ export function ManagerApp() {
 
   return (
     <div className="app-shell">
-      <div className="stat-grid" style={{ marginBottom: 18 }}>
-        <div className="stat-card panel">
-          <strong>{tabs.length}</strong>
-          <span className="muted">全部标签页</span>
+      <div className="top-dashboard">
+        <div className="stat-grid">
+          <div className="stat-card panel">
+            <strong>{tabs.length}</strong>
+            <span className="muted">全部标签页</span>
+          </div>
+          <div className="stat-card panel">
+            <strong>{filteredTabs.length}</strong>
+            <span className="muted">当前筛选结果</span>
+          </div>
+          <div className="stat-card panel">
+            <strong>{recentlyClosed.length}</strong>
+            <span className="muted">最近关闭待恢复</span>
+          </div>
         </div>
-        <div className="stat-card panel">
-          <strong>{filteredTabs.length}</strong>
-          <span className="muted">当前筛选结果</span>
-        </div>
-        <div className="stat-card panel">
-          <strong>{recentlyClosed.length}</strong>
-          <span className="muted">最近关闭待恢复</span>
-        </div>
-      </div>
-
-      <div className="workspace-layout workspace-layout-wide">
         <aside className="panel workspace-sidebar">
           <SectionTitle title="分类" subtitle="系统分类与自定义分类" />
           <CategoryList
@@ -305,7 +324,9 @@ export function ManagerApp() {
             </button>
           </div>
         </aside>
+      </div>
 
+      <div className="workspace-layout workspace-layout-wide">
         <main className="panel workspace-main">
           <SectionTitle
             title={activeCategoryName}
@@ -323,6 +344,19 @@ export function ManagerApp() {
                   onClick={() => setViewMode("board")}
                 >
                   看板视图
+                </button>
+                <button
+                  className="button-secondary"
+                  onClick={() => void refreshTabs()}
+                  disabled={refreshState === "loading"}
+                >
+                  {refreshLabel}
+                </button>
+                <button
+                  className={showRecentlyClosed ? "button-primary" : "button-secondary"}
+                  onClick={() => setShowRecentlyClosed((current) => !current)}
+                >
+                  {showRecentlyClosed ? "隐藏最近关闭" : "最近关闭"}
                 </button>
                 {viewMode === "board" ? (
                   <select
@@ -502,82 +536,91 @@ export function ManagerApp() {
                       onClose={handleCloseTab}
                       categories={categories}
                       onChangeCategory={moveTabToCategory}
+                      draggable
+                      dragging={draggingTabId === tab.tabId}
+                      onDragStart={setDraggingTabId}
+                      onDragEnd={() => {
+                        setDraggingTabId(null);
+                        setDropCategoryId(null);
+                      }}
                     />
                   ))}
                 </div>
               )}
             </div>
 
-            <div className="panel" style={{ padding: 16 }}>
-              <SectionTitle
-                title="最近关闭"
-                subtitle="可恢复最近关闭的标签页"
-                action={
-                  recentlyClosed.length > 0 ? (
-                    <button
-                      className="button-secondary"
-                      onClick={async () => {
-                        const response = await sendMessage({ type: "CLEAR_RECENTLY_CLOSED" });
-                        if (response.ok) {
-                          setRecentlyClosed([]);
-                          return;
-                        }
-
-                        window.alert(response.error ?? "清空最近关闭失败");
-                      }}
-                    >
-                      清空
-                    </button>
-                  ) : undefined
-                }
-              />
-              <div className="recent-grid">
-                {recentlyClosed.length === 0 ? (
-                  <div className="muted">最近没有可恢复的标签页。</div>
-                ) : (
-                  recentlyClosed.map((tab) => (
-                    <div key={tab.id} className="recent-card">
-                      <div style={{ minWidth: 0 }}>
-                        <div
-                          style={{
-                            fontWeight: 600,
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis"
-                          }}
-                        >
-                          {tab.customTitle || tab.title}
-                        </div>
-                        <div className="muted" style={{ fontSize: 12 }}>
-                          {tab.domain}
-                        </div>
-                      </div>
-                      <div className="muted" style={{ fontSize: 12 }}>
-                        {new Date(tab.closedAt).toLocaleString()}
-                      </div>
+            {showRecentlyClosed ? (
+              <div className="panel" style={{ padding: 16 }}>
+                <SectionTitle
+                  title="最近关闭"
+                  subtitle="可恢复最近关闭的标签页"
+                  action={
+                    recentlyClosed.length > 0 ? (
                       <button
                         className="button-secondary"
                         onClick={async () => {
-                          const response = await sendMessage({
-                            type: "RESTORE_CLOSED_TAB",
-                            id: tab.id
-                          });
-                          if (response.ok && Array.isArray(response.data)) {
-                            setRecentlyClosed(toRecentlyClosed(response.data));
-                            await refreshTabs();
+                          const response = await sendMessage({ type: "CLEAR_RECENTLY_CLOSED" });
+                          if (response.ok) {
+                            setRecentlyClosed([]);
                             return;
                           }
 
-                          window.alert(response.error ?? "恢复标签页失败");
+                          window.alert(response.error ?? "清空最近关闭失败");
                         }}
                       >
-                        恢复
+                        清空
                       </button>
-                    </div>
-                  ))
-                )}
+                    ) : undefined
+                  }
+                />
+                <div className="recent-grid">
+                  {recentlyClosed.length === 0 ? (
+                    <div className="muted">最近没有可恢复的标签页。</div>
+                  ) : (
+                    recentlyClosed.map((tab) => (
+                      <div key={tab.id} className="recent-card">
+                        <div style={{ minWidth: 0 }}>
+                          <div
+                            style={{
+                              fontWeight: 600,
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis"
+                            }}
+                          >
+                            {tab.customTitle || tab.title}
+                          </div>
+                          <div className="muted" style={{ fontSize: 12 }}>
+                            {tab.domain}
+                          </div>
+                        </div>
+                        <div className="muted" style={{ fontSize: 12 }}>
+                          {new Date(tab.closedAt).toLocaleString()}
+                        </div>
+                        <button
+                          className="button-secondary"
+                          onClick={async () => {
+                            const response = await sendMessage({
+                              type: "RESTORE_CLOSED_TAB",
+                              id: tab.id
+                            });
+                            if (response.ok && Array.isArray(response.data)) {
+                              setRecentlyClosed(toRecentlyClosed(response.data));
+                              await refreshTabs();
+                              return;
+                            }
+
+                            window.alert(response.error ?? "恢复标签页失败");
+                          }}
+                        >
+                          恢复
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
-            </div>
+            ) : null}
           </div>
         </main>
       </div>
